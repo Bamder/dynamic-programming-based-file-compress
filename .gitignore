@@ -1,0 +1,11 @@
+# Local build outputs
+/build/
+
+# Directory roundtrip test artifacts
+tests/fixtures/dpdc_roundtrip/restored/
+tests/fixtures/dpdc_roundtrip/*.dpdc
+
+# Image roundtrip test artifacts
+tests/fixtures/image_roundtrip/restored_*.png
+tests/fixtures/image_roundtrip/*.dpgc
+tests/fixtures/image_roundtrip/*.dprc
