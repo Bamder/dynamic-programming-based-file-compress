@@ -1,12 +1,15 @@
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include "../include/compressor/byte_io.h"
 #include "../include/compressor/compress_algorithm.h"
+#include "../include/compressor/directory_compress.h"
 #include "../include/compressor/stream_io.h"
 
 namespace fs = std::filesystem;
@@ -311,11 +314,11 @@ void directoryCompress(const fs::path &dir_path, const fs::path &output_path) {
     }
 
     // write dp payload metadata (for readSegmentBitstream on decompress)
-    writeU64LE(output, static_cast<uint64_t>(payload_symbols.size())); // count of symbols
+    writeU64LE(output, static_cast<uint64_t>(payload_symbols.size())); // count of symbols (raw payload)
     if (dp_result.segments.size() > 0xffffffffu) {
         throw runtime_error("[Compression]负载分段数量超出范围(u32)");
     }
-    writeU32LE(output, static_cast<uint32_t>(dp_result.segments.size())); // count of segments
+    writeU32LE(output, static_cast<uint32_t>(dp_result.segments.size())); // count of segments (payload processed by dp)
 
     // write compressed payload blob
     if (!dp_blob.empty()) {
@@ -363,10 +366,11 @@ static void writeFileFromPayload(
         throw runtime_error("[Decompression]写入文件失败：" + file_path.string());
     }
 
+    // move offset
     offset += static_cast<size_t>(expected_size);
 }
 
-void expandDirectory(
+void expandToDirectory(
     const DirNode& tree_root,
     const fs::path& root_path,
     const vector<uint8_t>& payload,
@@ -380,9 +384,79 @@ void expandDirectory(
 
         if (node.is_directory) {
             fs::create_directories(file_path);
-            expandDirectory(node, file_path, payload, offset);
+            expandToDirectory(node, file_path, payload, offset);
         } else {
             writeFileFromPayload(file_path, node.file_size, payload, offset);
         }
+    }
+}
+
+void directoryDecompress(const fs::path& compressed_file_path, const fs::path& output_path) {
+    // 1) read header
+    std::ifstream input(compressed_file_path, std::ios::binary);
+    if (!input) {
+        throw runtime_error("[Decompression]无法打开压缩文件：" + compressed_file_path.string());
+    }
+
+    // read magic
+    char magic[4];
+    input.read(magic, 4);
+    if (!input || std::memcmp(magic, "DPDC", 4)) { // bad input or magic is not "DPDC"
+        throw runtime_error("[Decompression]解压失败，不是合法的目录压缩文件");
+    }
+
+    // read tree header
+    const uint32_t tree_size = readU32LE(input);
+    const vector<uint8_t> tree_blob = readBytes(input, tree_size);
+
+    // read dp payload metadata
+    const uint64_t symbol_count = readU64LE(input);   // count of symbols in raw payload
+    const uint32_t segment_count = readU32LE(input);  // count of segments in dp-compressed payload
+
+    // read compressed payload blob
+    const vector<uint8_t> dp_blob = readRemainingBytes(input);
+
+    // 2) rebuild directory tree
+    const DirNode dir_tree = deserializeDirectoryTree(tree_blob);
+
+    // 3) resume payload from dp_blob
+    BitReader bit_reader(dp_blob);
+    const vector<int> symbols = readSegmentBitstream(bit_reader, symbol_count, segment_count);
+    const vector<uint8_t> payload = symbolsToPayload(symbols);
+
+    // 4) write back to disk
+    fs::create_directories(output_path);  // root directory
+    size_t offset = 0;
+    expandToDirectory(dir_tree, output_path, payload, offset);
+    if (offset != payload.size()) {
+        throw runtime_error("[Decompression]实际载荷大小与目录树记录不一致");
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Verify
+// process to flatten directory into payload and api of verification
+// -----------------------------------------------------------------------------
+static vector<uint8_t> flattenDirectoryToPayload(const fs::path& dir_path) {
+    const DirNode dir_tree = buildDirectoryTree(dir_path);
+    vector<uint8_t> payload;
+    flattenDirectory(dir_tree, dir_path, payload);
+    return payload;
+}
+
+void verifyDirectory(const fs::path& original_dir, const fs::path& restored_dir) {
+    const vector<uint8_t> original_payload = flattenDirectoryToPayload(original_dir);
+    const vector<uint8_t> restored_payload = flattenDirectoryToPayload(restored_dir);
+    const bool same_payload = original_payload == restored_payload;
+
+    std::cout << "========== 目录还原验证 ==========" << std::endl;
+    std::cout << "原始目录：" << original_dir.string() << std::endl;
+    std::cout << "还原目录：" << restored_dir.string() << std::endl;
+    std::cout << "原始 payload 字节数：" << original_payload.size() << std::endl;
+    std::cout << "还原 payload 字节数：" << restored_payload.size() << std::endl;
+    std::cout << "是否完全一致：" << (same_payload ? "True" : "False") << std::endl;
+
+    if (!same_payload) {
+        throw runtime_error("[Verify]目录 roundtrip 校验失败：payload 不一致");
     }
 }
