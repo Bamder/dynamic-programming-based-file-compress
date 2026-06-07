@@ -330,7 +330,7 @@ DirectoryCompressMetrics directoryCompress(const fs::path& dir_path, const fs::p
     // write dp payload metadata (for readSegmentBitstream on decompress)
     writeU64LE(output, static_cast<uint64_t>(payload_symbols.size())); // count of symbols (raw payload)
     if (dp_result.segments.size() > 0xffffffffu) {
-        throw runtime_error("[Compression]负载分段数量超出范围(u32)");
+        throw runtime_error("[Compression]载荷分段数量超出范围(u32)");
     }
     writeU32LE(output, static_cast<uint32_t>(dp_result.segments.size())); // count of segments (payload processed by dp)
 
@@ -491,11 +491,11 @@ void verifyDirectory(const fs::path& original_dir, const fs::path& restored_dir)
     std::cout << "========== 目录还原验证 ==========" << std::endl;
     std::cout << "原始目录：" << original_dir.string() << std::endl;
     std::cout << "还原目录：" << restored_dir.string() << std::endl;
-    std::cout << "原始 payload 字节数：" << original_payload.size() << std::endl;
-    std::cout << "还原 payload 字节数：" << restored_payload.size() << std::endl;
+    std::cout << "原始载荷字节数：" << original_payload.size() << std::endl;
+    std::cout << "还原载荷字节数：" << restored_payload.size() << std::endl;
     std::cout << "是否完全一致：" << (same_payload ? "True" : "False") << std::endl;
 
     if (!same_payload) {
-        throw runtime_error("[Verify]目录 roundtrip 校验失败：payload 不一致");
+        throw runtime_error("[Verify]目录往返测试(roundtrip)校验失败：载荷不一致");
     }
 }
