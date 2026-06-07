@@ -34,6 +34,7 @@
 
 #include "../include/compressor/bit_io.h"
 #include "../include/compressor/compress_algorithm.h"
+#include "../include/compressor/image_compress.h"
 #include "../include/compressor/stream_io.h"
 
 #if !defined(FORCE_STB) && __has_include(<opencv2/opencv.hpp>)
@@ -102,7 +103,7 @@ static int outputHeight(int height) {
 
 #if DPIC_USE_OPENCV
 
-GrayImage loadGrayImage(const string& path, bool apply_fixed_size = true) {
+GrayImage loadGrayImage(const string& path, bool apply_fixed_size) {
     cv::Mat image = cv::imread(path, cv::IMREAD_GRAYSCALE);
     if (image.empty()) {
         throw runtime_error("无法读取图像：" + path);
@@ -129,7 +130,7 @@ GrayImage loadGrayImage(const string& path, bool apply_fixed_size = true) {
     return out;
 }
 
-RGBImage loadRGBImage(const string& path, bool apply_fixed_size = true) {
+RGBImage loadRGBImage(const string& path, bool apply_fixed_size) {
     cv::Mat bgr = cv::imread(path, cv::IMREAD_COLOR);
     if (bgr.empty()) {
         throw runtime_error("无法读取图像：" + path);
@@ -233,7 +234,7 @@ vector<uint8_t> resizeInterleavedNearest(const vector<uint8_t>& input,
     return output;
 }
 
-GrayImage loadGrayImage(const string& path, bool apply_fixed_size = true) {
+GrayImage loadGrayImage(const string& path, bool apply_fixed_size) {
     int width = 0;
     int height = 0;
     int channels = 0;
@@ -263,7 +264,7 @@ GrayImage loadGrayImage(const string& path, bool apply_fixed_size = true) {
     return out;
 }
 
-RGBImage loadRGBImage(const string& path, bool apply_fixed_size = true) {
+RGBImage loadRGBImage(const string& path, bool apply_fixed_size) {
     int width = 0;
     int height = 0;
     int channels = 0;
@@ -385,7 +386,7 @@ void printFirstSegments(const vector<Segment>& segments, int limit = 10) {
 }
 
 void printGrayStats(const string& input_path) {
-    GrayImage image = loadGrayImage(input_path);
+    GrayImage image = loadGrayImage(input_path, true);
     const long long original_bits = static_cast<long long>(image.pixels.size()) * 8LL;
 
     const auto start = std::chrono::high_resolution_clock::now();
@@ -416,7 +417,7 @@ void printGrayStats(const string& input_path) {
 }
 
 void printRGBStats(const string& input_path) {
-    RGBImage image = loadRGBImage(input_path);
+    RGBImage image = loadRGBImage(input_path, true);
     const size_t pixel_count = image.r.size();
     const long long channel_original_bits = static_cast<long long>(pixel_count) * 8LL;
     const long long rgb_original_bits = static_cast<long long>(pixel_count) * 24LL;
@@ -460,7 +461,7 @@ void printRGBStats(const string& input_path) {
 }
 
 void compressGrayToFile(const string& input_path, const string& output_path) {
-    GrayImage image = loadGrayImage(input_path);
+    GrayImage image = loadGrayImage(input_path, true);
     const auto start = std::chrono::high_resolution_clock::now();
     DPResult result = compressPixels(image.pixels);
     const auto end = std::chrono::high_resolution_clock::now();
@@ -549,10 +550,14 @@ void verifyGrayImage(const string& original_path, const string& recovered_path) 
     cout << "原始灰度尺寸：" << original.width << " x " << original.height << endl;
     cout << "还原图像尺寸：" << recovered.width << " x " << recovered.height << endl;
     cout << "是否完全一致：" << (same_pixels ? "True" : "False") << endl;
+
+    if (!same_pixels) {
+        throw runtime_error("[Verify]灰度 roundtrip 校验失败：像素不一致");
+    }
 }
 
 void compressRGBToFile(const string& input_path, const string& output_path) {
-    RGBImage image = loadRGBImage(input_path);
+    RGBImage image = loadRGBImage(input_path, true);
 
     const auto start = std::chrono::high_resolution_clock::now();
     DPResult r_result = compressPixels(image.r);
@@ -572,7 +577,7 @@ void compressRGBToFile(const string& input_path, const string& output_path) {
         throw runtime_error("无法创建压缩文件：" + output_path);
     }
 
-    out.write("DPRG", 4);
+    out.write("DPRC", 4);
     writeU16LE(out, checkedU16(image.width, "width"));
     writeU16LE(out, checkedU16(image.height, "height"));
     writeU32LE(out, checkedU32(image.r.size(), "pixel_count"));
@@ -610,8 +615,8 @@ void decompressRGBToImage(const string& input_path, const string& output_path) {
 
     char magic[4] = {0, 0, 0, 0};
     in.read(magic, 4);
-    if (!in || std::memcmp(magic, "DPRG", 4) != 0) {
-        throw runtime_error("不是合法的 DPRG 压缩文件");
+    if (!in || std::memcmp(magic, "DPRC", 4) != 0) {
+        throw runtime_error("不是合法的 DPRC 压缩文件");
     }
 
     const uint16_t width = readU16LE(in);
@@ -654,85 +659,8 @@ void verifyRGBImage(const string& original_path, const string& recovered_path) {
     cout << "原始 RGB 尺寸：" << original.width << " x " << original.height << endl;
     cout << "还原图像尺寸：" << recovered.width << " x " << recovered.height << endl;
     cout << "是否完全一致：" << (same_pixels ? "True" : "False") << endl;
-}
 
-void printUsage(const string& program) {
-    cout << "用法：" << endl;
-    cout << "  " << program << " gray input.png" << endl;
-    cout << "  " << program << " gray-compress input.png compressed.dpgc" << endl;
-    cout << "  " << program << " gray-decompress compressed.dpgc recovered_gray.png" << endl;
-    cout << "  " << program << " gray-verify input.png recovered_gray.png" << endl;
-    cout << "  " << program << " rgb input.png" << endl;
-    cout << "  " << program << " rgb-compress input.png compressed.dprgbc" << endl;
-    cout << "  " << program << " rgb-decompress compressed.dprgbc recovered_rgb.png" << endl;
-    cout << "  " << program << " rgb-verify input.png recovered_rgb.png" << endl;
-}
-
-int main(int argc, char* argv[]) {
-    try {
-        if (argc < 3) {
-            printUsage(argc > 0 ? argv[0] : "./dp_image_compress");
-            return 1;
-        }
-
-        const string command = argv[1];
-
-        if (command == "gray") {
-            if (argc != 3) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            printGrayStats(argv[2]);
-        } else if (command == "gray-compress") {
-            if (argc != 4) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            compressGrayToFile(argv[2], argv[3]);
-        } else if (command == "gray-decompress") {
-            if (argc != 4) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            decompressGrayToImage(argv[2], argv[3]);
-        } else if (command == "gray-verify") {
-            if (argc != 4) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            verifyGrayImage(argv[2], argv[3]);
-        } else if (command == "rgb") {
-            if (argc != 3) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            printRGBStats(argv[2]);
-        } else if (command == "rgb-compress") {
-            if (argc != 4) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            compressRGBToFile(argv[2], argv[3]);
-        } else if (command == "rgb-decompress") {
-            if (argc != 4) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            decompressRGBToImage(argv[2], argv[3]);
-        } else if (command == "rgb-verify") {
-            if (argc != 4) {
-                printUsage(argv[0]);
-                return 1;
-            }
-            verifyRGBImage(argv[2], argv[3]);
-        } else {
-            printUsage(argv[0]);
-            return 1;
-        }
-    } catch (const std::exception& ex) {
-        cerr << "错误：" << ex.what() << endl;
-        return 1;
+    if (!same_pixels) {
+        throw runtime_error("[Verify]RGB roundtrip 校验失败：像素不一致");
     }
-
-    return 0;
 }
