@@ -9,3 +9,6 @@ tests/fixtures/dpdc_roundtrip/*.dpdc
 tests/fixtures/image_roundtrip/restored_*.png
 tests/fixtures/image_roundtrip/*.dpgc
 tests/fixtures/image_roundtrip/*.dprc
+
+# GAI-made report for developers to learn about this project
+*REPORT.md
