@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
-
+#include<windows.h>
 #include "../include/compressor/directory_compress.h"
 #include "../include/compressor/image_compress.h"
 
@@ -37,6 +37,9 @@ static void printUsage(const string& program) {
 }
 
 int main(int argc, char* argv[]) {
+
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
     try {
         if (argc < 3) {
             printUsage(argc > 0 ? argv[0] : "./compressor");
