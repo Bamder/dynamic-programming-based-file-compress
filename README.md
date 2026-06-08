@@ -23,6 +23,7 @@ cl /std:c++17 /utf-8 /EHsc /O2 /I src\native\include /I src\native\third_party\s
 ## 3. 构建前端
 
 ```powershell
+cd src\frontend
 npm run build
 ```
 
