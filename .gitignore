@@ -1,13 +1,30 @@
+# IDE
 .vs/
+
+# Test samples
 *.obj
 *.exe
 *.dpgc
+*.dprc
+*.dpdc
 *.png
+
+# Frontend dependencies
 src/frontend/node_modules/
 src/frontend/dist-electron/
 src/frontend/dist-renderer/
-.vs/
-*.obj
-*.exe
-*.dpgc
-*.png
+
+# Local build outputs
+/build/
+
+# Directory roundtrip test artifacts
+tests/fixtures/dpdc_roundtrip/restored/
+tests/fixtures/dpdc_roundtrip/*.dpdc
+
+# Image roundtrip test artifacts
+tests/fixtures/image_roundtrip/restored_*.png
+tests/fixtures/image_roundtrip/*.dpgc
+tests/fixtures/image_roundtrip/*.dprc
+
+# GAI-made report for developers to learn about this project
+*REPORT.md
