@@ -1,0 +1,79 @@
+{
+  "id": "5191898",
+  "name": "compress",
+  "font_family": "iconfont",
+  "css_prefix_text": "icon-",
+  "description": "",
+  "glyphs": [
+    {
+      "icon_id": "36000943",
+      "name": "展开向上",
+      "font_class": "zhankaixiangshang",
+      "unicode": "e76d",
+      "unicode_decimal": 59245
+    },
+    {
+      "icon_id": "29300527",
+      "name": "展开",
+      "font_class": "zhankai",
+      "unicode": "e617",
+      "unicode_decimal": 58903
+    },
+    {
+      "icon_id": "9369737",
+      "name": "统计",
+      "font_class": "tongji",
+      "unicode": "e60c",
+      "unicode_decimal": 58892
+    },
+    {
+      "icon_id": "10155580",
+      "name": "解压",
+      "font_class": "jieya",
+      "unicode": "e671",
+      "unicode_decimal": 58993
+    },
+    {
+      "icon_id": "12689169",
+      "name": "解压",
+      "font_class": "tubiaozhizuomoban-",
+      "unicode": "e62d",
+      "unicode_decimal": 58925
+    },
+    {
+      "icon_id": "42198995",
+      "name": "folder-zip-line",
+      "font_class": "folder-zip-line",
+      "unicode": "e798",
+      "unicode_decimal": 59288
+    },
+    {
+      "icon_id": "3826041",
+      "name": "图片",
+      "font_class": "tupian",
+      "unicode": "e63a",
+      "unicode_decimal": 58938
+    },
+    {
+      "icon_id": "5476621",
+      "name": "解密解压",
+      "font_class": "jiemijieya",
+      "unicode": "e689",
+      "unicode_decimal": 59017
+    },
+    {
+      "icon_id": "6049876",
+      "name": "压缩包",
+      "font_class": "yasuobao",
+      "unicode": "e626",
+      "unicode_decimal": 58918
+    },
+    {
+      "icon_id": "6331821",
+      "name": "校验",
+      "font_class": "xiaoyan",
+      "unicode": "e631",
+      "unicode_decimal": 58929
+    }
+  ]
+}

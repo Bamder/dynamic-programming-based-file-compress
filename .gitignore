@@ -1,3 +1,19 @@
+# IDE
+.vs/
+
+# Test samples
+*.obj
+*.exe
+*.dpgc
+*.dprc
+*.dpdc
+*.png
+
+# Frontend dependencies
+src/frontend/node_modules/
+src/frontend/dist-electron/
+src/frontend/dist-renderer/
+
 # Local build outputs
 /build/
 
