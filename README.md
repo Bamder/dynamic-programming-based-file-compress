@@ -7,7 +7,7 @@
 在项目根目录执行：
 
 ```powershell
-cl /std:c++17 /utf-8 /EHsc /O2 /I src\native\include /I src\native\third_party\stb src\native\src\compressor_cli.cpp src\native\src\compress_algorithm.cpp src\native\src\directory_compress.cpp src\native\src\image_compress.cpp /Fe:compressor.exe(vs环境下运行，根目录下有.exe文件就不需要运行了)
+cl /std:c++17 /utf-8 /EHsc /O2 /I src\native\include /I src\native\third_party\stb src\native\src\compressor_cli.cpp src\native\src\compress_algorithm.cpp src\native\src\directory_compress.cpp src\native\src\image_compress.cpp src\native\src\metrics_print.cpp /Fe:compressor.exe(vs环境下运行，根目录下有.exe文件就不需要运行了)
 ```
 
 确保生成：

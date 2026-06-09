@@ -31,6 +31,15 @@ function appendExtension(filePath: string, extension: string) {
   return filePath.toLowerCase().endsWith(`.${extension}`) ? filePath : `${filePath}.${extension}`;
 }
 
+function buildCompressorArgs(command: string, paths: string[], showMetrics: boolean) {
+  const supportsMetrics =
+    command.endsWith("-compress") || command.endsWith("-decompress");
+  if (showMetrics && supportsMetrics) {
+    return [command, "--metrics", ...paths];
+  }
+  return [command, ...paths];
+}
+
 function getDesktopApi(): DesktopApi | undefined {
   return window.desktopApi;
 }
@@ -40,6 +49,7 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("directory");
   const [imageKind, setImageKind] = useState<ImageKind>("gray");
   const [running, setRunning] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(true);
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [lastResult, setLastResult] = useState<CompressorResult | null>(null);
   const [log, setLog] = useState("等待操作。请先确认项目根目录已有 compressor.exe。\n");
@@ -182,12 +192,22 @@ export default function App() {
               <h2>{mode === "directory" ? "目录模式" : "PNG 图片模式"}</h2>
               <p>{mode === "directory" ? "压缩、恢复并校验完整目录结构。" : "支持灰度图与 RGB 图像的统计、压缩、恢复和校验。"}</p>
             </div>
-            {mode === "image" ? (
-              <div className="segmented" aria-label="图片类型">
-                <button className={imageKind === "gray" ? "active" : ""} title="切换到灰度图模式" onClick={() => setImageKind("gray")}>◐ 灰度</button>
-                <button className={imageKind === "rgb" ? "active" : ""} title="切换到 RGB 图模式" onClick={() => setImageKind("rgb")}>◉ RGB</button>
-              </div>
-            ) : null}
+            <div className="section-controls">
+              {mode === "image" ? (
+                <div className="segmented" aria-label="图片类型">
+                  <button className={imageKind === "gray" ? "active" : ""} title="切换到灰度图模式" onClick={() => setImageKind("gray")}>◐ 灰度</button>
+                  <button className={imageKind === "rgb" ? "active" : ""} title="切换到 RGB 图模式" onClick={() => setImageKind("rgb")}>◉ RGB</button>
+                </div>
+              ) : null}
+              <label className="metrics-toggle" title="压缩或解压完成后在日志中输出统计信息">
+                <input
+                  type="checkbox"
+                  checked={showMetrics}
+                  onChange={(event) => setShowMetrics(event.target.checked)}
+                />
+                <span>输出统计信息</span>
+              </label>
+            </div>
           </div>
 
           {mode === "directory" ? (
@@ -197,8 +217,8 @@ export default function App() {
               <PathRow label="解压输出目录" value={fields.dirRestore} onChange={(value) => updateField("dirRestore", value)} onPick={() => pickDirectory("dirRestore")} icon="📁" title="选择解压结果输出目录" />
 
               <div className="actions">
-                <button className="primary" disabled={running} title="将输入目录压缩为 .dpdc 文件" onClick={() => run("目录压缩", ["dir-compress", fields.dirInput, fields.dirArchive])}><span className="iconfont icon-folder-zip-line"></span></button>
-                <button className="soft" disabled={running} title="从 .dpdc 文件恢复目录" onClick={() => run("目录解压", ["dir-decompress", fields.dirArchive, fields.dirRestore])}><span className="iconfont icon-jiemijieya"></span></button>
+                <button className="primary" disabled={running} title="将输入目录压缩为 .dpdc 文件" onClick={() => run("目录压缩", buildCompressorArgs("dir-compress", [fields.dirInput, fields.dirArchive], showMetrics))}><span className="iconfont icon-folder-zip-line"></span></button>
+                <button className="soft" disabled={running} title="从 .dpdc 文件恢复目录" onClick={() => run("目录解压", buildCompressorArgs("dir-decompress", [fields.dirArchive, fields.dirRestore], showMetrics))}><span className="iconfont icon-jiemijieya"></span></button>
                 <button className="soft" disabled={running} title="比较原目录与解压目录是否一致" onClick={() => run("目录校验", ["dir-verify", fields.dirInput, fields.dirRestore])}><span className="iconfont icon-xiaoyan"></span></button>
               </div>
             </div>
@@ -218,8 +238,8 @@ export default function App() {
 
               <div className="actions">
                 <button className="soft" disabled={running} title="查看图片统计信息" onClick={() => run("图片统计", [imageKind, fields.imageInput])}><span className="iconfont icon-tongji"></span></button>
-                <button className="primary" disabled={running} title="压缩当前 PNG 图片" onClick={() => run("图片压缩", [`${imageKind}-compress`, fields.imageInput, fields.imageArchive])}><span className="iconfont icon-folder-zip-line"></span></button>
-                <button className="soft" disabled={running} title="将压缩文件恢复为 PNG" onClick={() => run("图片解压", [`${imageKind}-decompress`, fields.imageArchive, fields.imageOutput])}><span className="iconfont icon-jiemijieya"></span></button>
+                <button className="primary" disabled={running} title="压缩当前 PNG 图片" onClick={() => run("图片压缩", buildCompressorArgs(`${imageKind}-compress`, [fields.imageInput, fields.imageArchive], showMetrics))}><span className="iconfont icon-folder-zip-line"></span></button>
+                <button className="soft" disabled={running} title="将压缩文件恢复为 PNG" onClick={() => run("图片解压", buildCompressorArgs(`${imageKind}-decompress`, [fields.imageArchive, fields.imageOutput], showMetrics))}><span className="iconfont icon-jiemijieya"></span></button>
                 <button className="soft" disabled={running} title="比较原图与恢复图是否一致" onClick={() => run("图片校验", [`${imageKind}-verify`, fields.imageInput, fields.imageOutput])}><span className="iconfont icon-xiaoyan"></span></button>
               </div>
             </div>

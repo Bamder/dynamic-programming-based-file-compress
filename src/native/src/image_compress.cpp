@@ -24,7 +24,6 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -358,7 +357,7 @@ long long fileSizeBits(const string& path) {
     return static_cast<long long>(in.tellg()) * 8LL;
 }
 
-map<int, int> bitWidthDistribution(const vector<Segment>& segments) {
+static map<int, int> bitWidthDistribution(const vector<Segment>& segments) {
     map<int, int> dist;
     for (const Segment& seg : segments) {
         ++dist[seg.bit_width];
@@ -366,106 +365,77 @@ map<int, int> bitWidthDistribution(const vector<Segment>& segments) {
     return dist;
 }
 
-void printDistribution(const string& title, const vector<Segment>& segments) {
-    cout << title << endl;
-    const map<int, int> dist = bitWidthDistribution(segments);
-    for (const auto& [bit_width, count] : dist) {
-        cout << bit_width << " bit：" << count << " 段" << endl;
-    }
+static void fillRGBChannelMetrics(RGBChannelMetrics& metrics,
+                                  const DPResult& result,
+                                  long long channel_original_bits) {
+    metrics.dp_model_bits = result.min_bits;
+    metrics.compression_ratio = static_cast<double>(result.min_bits) / channel_original_bits;
+    metrics.segment_count = static_cast<uint32_t>(result.segments.size());
+    metrics.bit_width_distribution = bitWidthDistribution(result.segments);
+    metrics.segments = result.segments;
 }
 
-void printFirstSegments(const vector<Segment>& segments, int limit = 10) {
-    const int count = std::min<int>(limit, static_cast<int>(segments.size()));
-    for (int i = 0; i < count; ++i) {
-        const Segment& seg = segments[i];
-        cout << "{start: " << seg.start
-             << ", end: " << seg.end
-             << ", length: " << seg.length
-             << ", bit_width: " << seg.bit_width << "}" << endl;
-    }
-}
-
-void printGrayStats(const string& input_path) {
+GrayAnalyzeMetrics analyzeGrayImage(const string& input_path) {
+    GrayAnalyzeMetrics metrics;
     GrayImage image = loadGrayImage(input_path, true);
-    const long long original_bits = static_cast<long long>(image.pixels.size()) * 8LL;
+    metrics.width = static_cast<uint16_t>(image.width);
+    metrics.height = static_cast<uint16_t>(image.height);
+    metrics.pixel_count = image.pixels.size();
+    metrics.original_bits = static_cast<long long>(image.pixels.size()) * 8LL;
 
-    const auto start = std::chrono::high_resolution_clock::now();
+    const auto dp_start = std::chrono::steady_clock::now();
     DPResult result = compressPixels(image.pixels);
-    const auto end = std::chrono::high_resolution_clock::now();
-    const double seconds = std::chrono::duration<double>(end - start).count();
+    metrics.dp_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - dp_start).count();
 
-    const double compression_ratio = static_cast<double>(result.min_bits) / original_bits;
-    const double saved_ratio = 1.0 - compression_ratio;
-
-    cout << "========== DP 灰度图像压缩结果 ==========" << endl;
-    cout << "图像尺寸：" << image.width << " x " << image.height << endl;
-    cout << "像素数量：" << image.pixels.size() << endl;
-    cout << "原始存储空间：" << original_bits << " bit" << endl;
-    cout << "压缩后存储空间：" << result.min_bits << " bit" << endl;
-    cout << std::fixed << std::setprecision(4);
-    cout << "压缩率：" << compression_ratio << endl;
-    cout << std::setprecision(2);
-    cout << "节省比例：" << saved_ratio * 100.0 << "%" << endl;
-    cout << std::setprecision(4);
-    cout << "执行时间：" << seconds << " 秒" << endl;
-    cout << "最优分段数量：" << result.segments.size() << endl;
-    cout << endl;
-    printDistribution("各位宽分段数量统计：", result.segments);
-    cout << endl;
-    cout << "前 10 个分段结果：" << endl;
-    printFirstSegments(result.segments);
+    metrics.dp_model_bits = result.min_bits;
+    metrics.compression_ratio = static_cast<double>(result.min_bits) / metrics.original_bits;
+    metrics.saved_ratio = 1.0 - metrics.compression_ratio;
+    metrics.segment_count = static_cast<uint32_t>(result.segments.size());
+    metrics.bit_width_distribution = bitWidthDistribution(result.segments);
+    metrics.segments = result.segments;
+    return metrics;
 }
 
-void printRGBStats(const string& input_path) {
+RGBAnalyzeMetrics analyzeRGBImage(const string& input_path) {
+    RGBAnalyzeMetrics metrics;
     RGBImage image = loadRGBImage(input_path, true);
     const size_t pixel_count = image.r.size();
     const long long channel_original_bits = static_cast<long long>(pixel_count) * 8LL;
-    const long long rgb_original_bits = static_cast<long long>(pixel_count) * 24LL;
 
-    const auto start = std::chrono::high_resolution_clock::now();
+    metrics.width = static_cast<uint16_t>(image.width);
+    metrics.height = static_cast<uint16_t>(image.height);
+    metrics.rgb_original_bits = static_cast<long long>(pixel_count) * 24LL;
+
+    const auto dp_start = std::chrono::steady_clock::now();
     DPResult r_result = compressPixels(image.r);
     DPResult g_result = compressPixels(image.g);
     DPResult b_result = compressPixels(image.b);
-    const auto end = std::chrono::high_resolution_clock::now();
-    const double seconds = std::chrono::duration<double>(end - start).count();
+    metrics.dp_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - dp_start).count();
 
-    const long long total_bits = r_result.min_bits + g_result.min_bits + b_result.min_bits;
-    const double r_ratio = static_cast<double>(r_result.min_bits) / channel_original_bits;
-    const double g_ratio = static_cast<double>(g_result.min_bits) / channel_original_bits;
-    const double b_ratio = static_cast<double>(b_result.min_bits) / channel_original_bits;
-    const double total_ratio = static_cast<double>(total_bits) / rgb_original_bits;
-    const double saved_ratio = 1.0 - total_ratio;
+    fillRGBChannelMetrics(metrics.r, r_result, channel_original_bits);
+    fillRGBChannelMetrics(metrics.g, g_result, channel_original_bits);
+    fillRGBChannelMetrics(metrics.b, b_result, channel_original_bits);
 
-    cout << "========== RGB 彩色图像 DP 压缩结果 ==========" << endl;
-    cout << "图像尺寸：" << image.width << " x " << image.height << endl;
-    cout << "原始 RGB 存储空间：" << rgb_original_bits << " bit" << endl;
-    cout << std::fixed << std::setprecision(4);
-    cout << "R 通道压缩后：" << r_result.min_bits << " bit，压缩率：" << r_ratio << endl;
-    cout << "G 通道压缩后：" << g_result.min_bits << " bit，压缩率：" << g_ratio << endl;
-    cout << "B 通道压缩后：" << b_result.min_bits << " bit，压缩率：" << b_ratio << endl;
-    cout << "RGB 总压缩后：" << total_bits << " bit" << endl;
-    cout << "RGB 总压缩率：" << total_ratio << endl;
-    cout << std::setprecision(2);
-    cout << "节省比例：" << saved_ratio * 100.0 << "%" << endl;
-    cout << std::setprecision(4);
-    cout << "执行时间：" << seconds << " 秒" << endl;
-    cout << "R 通道分段数量：" << r_result.segments.size() << endl;
-    cout << "G 通道分段数量：" << g_result.segments.size() << endl;
-    cout << "B 通道分段数量：" << b_result.segments.size() << endl;
-    cout << endl;
-    printDistribution("R 通道位宽分布统计：", r_result.segments);
-    cout << endl;
-    printDistribution("G 通道位宽分布统计：", g_result.segments);
-    cout << endl;
-    printDistribution("B 通道位宽分布统计：", b_result.segments);
+    metrics.total_dp_model_bits = r_result.min_bits + g_result.min_bits + b_result.min_bits;
+    metrics.total_compression_ratio =
+        static_cast<double>(metrics.total_dp_model_bits) / metrics.rgb_original_bits;
+    metrics.saved_ratio = 1.0 - metrics.total_compression_ratio;
+    return metrics;
 }
 
-void compressGrayToFile(const string& input_path, const string& output_path) {
+GrayCompressMetrics compressGrayToFile(const string& input_path, const string& output_path) {
+    GrayCompressMetrics metrics;
+    const auto total_start = std::chrono::steady_clock::now();
+
     GrayImage image = loadGrayImage(input_path, true);
-    const auto start = std::chrono::high_resolution_clock::now();
+    metrics.width = static_cast<uint16_t>(image.width);
+    metrics.height = static_cast<uint16_t>(image.height);
+    metrics.pixel_count = image.pixels.size();
+    metrics.original_bits = static_cast<long long>(image.pixels.size()) * 8LL;
+
+    const auto dp_start = std::chrono::steady_clock::now();
     DPResult result = compressPixels(image.pixels);
-    const auto end = std::chrono::high_resolution_clock::now();
-    const double seconds = std::chrono::duration<double>(end - start).count();
+    metrics.dp_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - dp_start).count();
 
     BitWriter writer;
     writeSegmentBitstream(writer, image.pixels, result.segments);
@@ -484,24 +454,22 @@ void compressGrayToFile(const string& input_path, const string& output_path) {
     out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
     out.close();
 
-    const long long original_bits = static_cast<long long>(image.pixels.size()) * 8LL;
-    const long long actual_file_bits = fileSizeBits(output_path);
-
-    cout << "========== 灰度压缩文件生成完成 ==========" << endl;
-    cout << "输入图片：" << input_path << endl;
-    cout << "压缩文件：" << output_path << endl;
-    cout << "图像尺寸：" << image.width << " x " << image.height << endl;
-    cout << "原始像素数据：" << original_bits << " bit" << endl;
-    cout << "DP 模型压缩后：" << result.min_bits << " bit" << endl;
-    cout << "实际压缩文件大小：" << actual_file_bits << " bit" << endl;
-    cout << std::fixed << std::setprecision(4);
-    cout << "DP 模型压缩率：" << static_cast<double>(result.min_bits) / original_bits << endl;
-    cout << "实际文件压缩率：" << static_cast<double>(actual_file_bits) / original_bits << endl;
-    cout << "分段数量：" << result.segments.size() << endl;
-    cout << "DP 计算时间：" << seconds << " 秒" << endl;
+    metrics.dp_model_bits = result.min_bits;
+    metrics.segment_count = static_cast<uint32_t>(result.segments.size());
+    metrics.actual_file_bits = fileSizeBits(output_path);
+    metrics.output_file_bytes = static_cast<uint64_t>(metrics.actual_file_bits / 8LL);
+    metrics.model_compression_ratio = static_cast<double>(metrics.dp_model_bits) / metrics.original_bits;
+    metrics.file_compression_ratio =
+        static_cast<double>(metrics.actual_file_bits) / metrics.original_bits;
+    metrics.total_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - total_start).count();
+    return metrics;
 }
 
-void decompressGrayToImage(const string& input_path, const string& output_path) {
+GrayDecompressMetrics decompressGrayToImage(const string& input_path, const string& output_path) {
+    GrayDecompressMetrics metrics;
+    const auto total_start = std::chrono::steady_clock::now();
+
     ifstream in(input_path, ios::binary);
     if (!in) {
         throw runtime_error("无法打开压缩文件：" + input_path);
@@ -526,11 +494,12 @@ void decompressGrayToImage(const string& input_path, const string& output_path) 
     vector<int> pixels = readSegmentBitstream(reader, pixel_count, segment_count);
     writeGrayImage(output_path, width, height, pixels);
 
-    cout << "========== 灰度解压完成 ==========" << endl;
-    cout << "压缩文件：" << input_path << endl;
-    cout << "还原图片：" << output_path << endl;
-    cout << "图像尺寸：" << width << " x " << height << endl;
-    cout << "像素数量：" << pixels.size() << endl;
+    metrics.width = width;
+    metrics.height = height;
+    metrics.pixel_count = pixels.size();
+    metrics.total_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - total_start).count();
+    return metrics;
 }
 
 bool sameVector(const vector<int>& a, const vector<int>& b) {
@@ -556,15 +525,22 @@ void verifyGrayImage(const string& original_path, const string& recovered_path) 
     }
 }
 
-void compressRGBToFile(const string& input_path, const string& output_path) {
-    RGBImage image = loadRGBImage(input_path, true);
+RGBCompressMetrics compressRGBToFile(const string& input_path, const string& output_path) {
+    RGBCompressMetrics metrics;
+    const auto total_start = std::chrono::steady_clock::now();
 
-    const auto start = std::chrono::high_resolution_clock::now();
+    RGBImage image = loadRGBImage(input_path, true);
+    metrics.width = static_cast<uint16_t>(image.width);
+    metrics.height = static_cast<uint16_t>(image.height);
+    metrics.pixel_count = image.r.size();
+    metrics.original_bits = static_cast<long long>(image.r.size()) * 24LL;
+
+    const long long channel_original_bits = static_cast<long long>(image.r.size()) * 8LL;
+    const auto dp_start = std::chrono::steady_clock::now();
     DPResult r_result = compressPixels(image.r);
     DPResult g_result = compressPixels(image.g);
     DPResult b_result = compressPixels(image.b);
-    const auto end = std::chrono::high_resolution_clock::now();
-    const double seconds = std::chrono::duration<double>(end - start).count();
+    metrics.dp_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - dp_start).count();
 
     BitWriter writer;
     writeSegmentBitstream(writer, image.r, r_result.segments);
@@ -587,27 +563,25 @@ void compressRGBToFile(const string& input_path, const string& output_path) {
     out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
     out.close();
 
-    const long long original_bits = static_cast<long long>(image.r.size()) * 24LL;
-    const long long model_bits = r_result.min_bits + g_result.min_bits + b_result.min_bits;
-    const long long actual_file_bits = fileSizeBits(output_path);
+    fillRGBChannelMetrics(metrics.r, r_result, channel_original_bits);
+    fillRGBChannelMetrics(metrics.g, g_result, channel_original_bits);
+    fillRGBChannelMetrics(metrics.b, b_result, channel_original_bits);
 
-    cout << "========== RGB 压缩文件生成完成 ==========" << endl;
-    cout << "输入图片：" << input_path << endl;
-    cout << "压缩文件：" << output_path << endl;
-    cout << "图像尺寸：" << image.width << " x " << image.height << endl;
-    cout << "原始 RGB 像素数据：" << original_bits << " bit" << endl;
-    cout << "DP 模型压缩后：" << model_bits << " bit" << endl;
-    cout << "实际压缩文件大小：" << actual_file_bits << " bit" << endl;
-    cout << std::fixed << std::setprecision(4);
-    cout << "DP 模型压缩率：" << static_cast<double>(model_bits) / original_bits << endl;
-    cout << "实际文件压缩率：" << static_cast<double>(actual_file_bits) / original_bits << endl;
-    cout << "R 通道分段数量：" << r_result.segments.size() << endl;
-    cout << "G 通道分段数量：" << g_result.segments.size() << endl;
-    cout << "B 通道分段数量：" << b_result.segments.size() << endl;
-    cout << "DP 计算时间：" << seconds << " 秒" << endl;
+    metrics.dp_model_bits = r_result.min_bits + g_result.min_bits + b_result.min_bits;
+    metrics.actual_file_bits = fileSizeBits(output_path);
+    metrics.output_file_bytes = static_cast<uint64_t>(metrics.actual_file_bits / 8LL);
+    metrics.model_compression_ratio = static_cast<double>(metrics.dp_model_bits) / metrics.original_bits;
+    metrics.file_compression_ratio =
+        static_cast<double>(metrics.actual_file_bits) / metrics.original_bits;
+    metrics.total_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - total_start).count();
+    return metrics;
 }
 
-void decompressRGBToImage(const string& input_path, const string& output_path) {
+RGBDecompressMetrics decompressRGBToImage(const string& input_path, const string& output_path) {
+    RGBDecompressMetrics metrics;
+    const auto total_start = std::chrono::steady_clock::now();
+
     ifstream in(input_path, ios::binary);
     if (!in) {
         throw runtime_error("无法打开压缩文件：" + input_path);
@@ -636,11 +610,12 @@ void decompressRGBToImage(const string& input_path, const string& output_path) {
     vector<int> b = readSegmentBitstream(reader, pixel_count, b_segment_count);
     writeRGBImage(output_path, width, height, r, g, b);
 
-    cout << "========== RGB 解压完成 ==========" << endl;
-    cout << "压缩文件：" << input_path << endl;
-    cout << "还原图片：" << output_path << endl;
-    cout << "图像尺寸：" << width << " x " << height << endl;
-    cout << "像素数量：" << pixel_count << endl;
+    metrics.width = width;
+    metrics.height = height;
+    metrics.pixel_count = pixel_count;
+    metrics.total_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - total_start).count();
+    return metrics;
 }
 
 void verifyRGBImage(const string& original_path, const string& recovered_path) {

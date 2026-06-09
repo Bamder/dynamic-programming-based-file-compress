@@ -30,4 +30,7 @@ DirectoryCompressMetrics directoryCompress(const std::filesystem::path& dir_path
 DirectoryDecompressMetrics directoryDecompress(const std::filesystem::path& compressed_file_path,
                                                  const std::filesystem::path& output_path);
 
+void verifyDirectory(const std::filesystem::path& original_dir,
+                     const std::filesystem::path& restored_dir);
+
 #endif  // COMPRESSOR_DIRECTORY_COMPRESS_H
