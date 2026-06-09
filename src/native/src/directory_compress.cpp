@@ -1,9 +1,11 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -278,23 +280,35 @@ DPResult compressSymbols(const vector<int>& symbols) {
  *   Tip: tail may be zero-padded to a byte boundary
  *
  */
-void directoryCompress(const fs::path &dir_path, const fs::path &output_path) {
+DirectoryCompressMetrics directoryCompress(const fs::path& dir_path, const fs::path& output_path) {
+    // for metrics count
+    const auto total_time_start = std::chrono::steady_clock::now();
+    DirectoryCompressMetrics metrics;
+
     // 1) deal with tree_blob
     const DirNode dir_tree = buildDirectoryTree(dir_path);
     const vector<uint8_t> tree_blob = serializeDirectoryTree(dir_tree);
+    metrics.tree_blob_bytes = static_cast<uint32_t>(tree_blob.size());
 
-    // 2) deal with dp_blob
+   // 2) deal with raw payload
     vector<uint8_t> payload;
     flattenDirectory(dir_tree, dir_path, payload);
-    vector<int> payload_symbols = payloadToSymbols(payload);
-    // find the best transcoding schedule (segmentation and bit-width)
+    metrics.payload_bytes = payload.size();
+
+    // 3) deal with dp_blob
+    const auto dp_time_start = std::chrono::steady_clock::now(); // for dp time count
+    vector<int> payload_symbols = payloadToSymbols(payload);     // only do type-casting
     const DPResult dp_result = compressSymbols(payload_symbols);
-    // process payload according to the schedule
     BitWriter bit_writer;
     writeSegmentBitstream(bit_writer, payload_symbols, dp_result.segments);
     const vector<uint8_t> dp_blob = bit_writer.toBytes();
+    // record dp metrics
+    metrics.dp_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - dp_time_start).count();
+    metrics.dp_blob_bytes = dp_blob.size();
+    metrics.dp_model_bits = dp_result.min_bits;
+    metrics.segment_count = static_cast<uint32_t>(dp_result.segments.size());
 
-    // 3) write in dpdc file
+    // 4) write in dpdc file
     std::ofstream output(output_path, std::ios::binary);
     if (!output) {
         throw runtime_error("[Compression]无法创建压缩文件：" + output_path.string());
@@ -316,7 +330,7 @@ void directoryCompress(const fs::path &dir_path, const fs::path &output_path) {
     // write dp payload metadata (for readSegmentBitstream on decompress)
     writeU64LE(output, static_cast<uint64_t>(payload_symbols.size())); // count of symbols (raw payload)
     if (dp_result.segments.size() > 0xffffffffu) {
-        throw runtime_error("[Compression]负载分段数量超出范围(u32)");
+        throw runtime_error("[Compression]载荷分段数量超出范围(u32)");
     }
     writeU32LE(output, static_cast<uint32_t>(dp_result.segments.size())); // count of segments (payload processed by dp)
 
@@ -325,6 +339,22 @@ void directoryCompress(const fs::path &dir_path, const fs::path &output_path) {
         output.write(reinterpret_cast<const char*>(dp_blob.data()),
                      static_cast<std::streamsize>(dp_blob.size()));
     }
+
+    // 5) write into metrics
+    metrics.total_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - total_time_start).count();
+    metrics.output_file_bytes = fs::file_size(output_path);
+    // fallback for invalid division
+    if (metrics.payload_bytes == 0) {
+        metrics.model_compression_ratio = std::numeric_limits<double>::quiet_NaN();
+        metrics.file_compression_ratio = std::numeric_limits<double>::quiet_NaN();
+    } else {
+        // calculate the ratios
+        const double raw_payload_bits = static_cast<double>(metrics.payload_bytes * 8ULL);
+        const double total_file_bits = static_cast<double>(metrics.output_file_bytes * 8ULL);
+        metrics.model_compression_ratio = static_cast<double>(metrics.dp_model_bits) / raw_payload_bits;
+        metrics.file_compression_ratio = total_file_bits / raw_payload_bits;
+    }
+    return metrics;
 }
 
 // -----------------------------------------------------------------------------
@@ -391,7 +421,11 @@ void expandToDirectory(
     }
 }
 
-void directoryDecompress(const fs::path& compressed_file_path, const fs::path& output_path) {
+DirectoryDecompressMetrics directoryDecompress(const fs::path& compressed_file_path, const fs::path& output_path) {
+    // for metrics count
+    const auto total_time_start = std::chrono::steady_clock::now();
+    DirectoryDecompressMetrics metrics;
+
     // 1) read header
     std::ifstream input(compressed_file_path, std::ios::binary);
     if (!input) {
@@ -408,6 +442,7 @@ void directoryDecompress(const fs::path& compressed_file_path, const fs::path& o
     // read tree header
     const uint32_t tree_size = readU32LE(input);
     const vector<uint8_t> tree_blob = readBytes(input, tree_size);
+    metrics.tree_blob_bytes = tree_size;
 
     // read dp payload metadata
     const uint64_t symbol_count = readU64LE(input);   // count of symbols in raw payload
@@ -422,15 +457,19 @@ void directoryDecompress(const fs::path& compressed_file_path, const fs::path& o
     // 3) resume payload from dp_blob
     BitReader bit_reader(dp_blob);
     const vector<int> symbols = readSegmentBitstream(bit_reader, symbol_count, segment_count);
-    const vector<uint8_t> payload = symbolsToPayload(symbols);
+    const vector<uint8_t> payload = symbolsToPayload(symbols); // only do type-casting
+    metrics.payload_bytes = payload.size();
 
     // 4) write back to disk
-    fs::create_directories(output_path);  // root directory
+    fs::create_directories(output_path);  // create root directory
     size_t offset = 0;
     expandToDirectory(dir_tree, output_path, payload, offset);
     if (offset != payload.size()) {
         throw runtime_error("[Decompression]实际载荷大小与目录树记录不一致");
     }
+
+    metrics.total_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - total_time_start).count();
+    return metrics;
 }
 
 // -----------------------------------------------------------------------------
@@ -452,11 +491,11 @@ void verifyDirectory(const fs::path& original_dir, const fs::path& restored_dir)
     std::cout << "========== 目录还原验证 ==========" << std::endl;
     std::cout << "原始目录：" << original_dir.string() << std::endl;
     std::cout << "还原目录：" << restored_dir.string() << std::endl;
-    std::cout << "原始 payload 字节数：" << original_payload.size() << std::endl;
-    std::cout << "还原 payload 字节数：" << restored_payload.size() << std::endl;
+    std::cout << "原始载荷字节数：" << original_payload.size() << std::endl;
+    std::cout << "还原载荷字节数：" << restored_payload.size() << std::endl;
     std::cout << "是否完全一致：" << (same_payload ? "True" : "False") << std::endl;
 
     if (!same_payload) {
-        throw runtime_error("[Verify]目录 roundtrip 校验失败：payload 不一致");
+        throw runtime_error("[Verify]目录往返测试(roundtrip)校验失败：载荷不一致");
     }
 }
